@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/Sirupsen/logrus"
 	"github.com/garyburd/redigo/redis"
 )
 
@@ -16,6 +16,7 @@ type Monitor struct {
 	started          bool
 	currentConn      redis.Conn
 	currentConnMutex sync.Mutex
+	logger           *logrus.Logger
 }
 
 func NewMonitor(dial Dialer, channelName string, onMessage func(data []byte), waitDuration time.Duration) *Monitor {
@@ -26,6 +27,7 @@ func NewMonitor(dial Dialer, channelName string, onMessage func(data []byte), wa
 		waitDuration: waitDuration,
 		started:      true,
 		currentConn:  nil,
+		logger:       logrus.StandardLogger(),
 	}
 
 	go m.start()
@@ -47,10 +49,14 @@ func (m *Monitor) Close() error {
 	return nil
 }
 
+func (m *Monitor) SetLogger(logger *logrus.Logger) {
+	m.logger = logger
+}
+
 func (m *Monitor) do() {
 	conn, err := m.dial()
 	if err != nil {
-		log.WithError(err).Warn("Redis dial failed")
+		m.logger.WithError(err).Warn("Redis dial failed")
 		return
 	}
 
@@ -70,10 +76,11 @@ func (m *Monitor) do() {
 	psc := redis.PubSubConn{Conn: conn}
 	err = psc.Subscribe(m.channelName)
 	if err != nil {
-		log.WithError(err).Warn("Redis monitor subscribe failed")
+		m.logger.WithError(err).Warn("Redis monitor subscribe failed")
+		return
 	}
 
-	log.Debug("Redis monitor ready")
+	m.logger.Debug("Redis monitor ready")
 
 pscLoop:
 	for {
@@ -86,7 +93,9 @@ pscLoop:
 		case redis.Subscription:
 
 		case error:
-			log.WithError(v).Warn("Redis monitor receive error")
+			if m.started {
+				m.logger.WithError(v).Warn("Redis monitor receive error")
+			}
 
 			break pscLoop
 		}
