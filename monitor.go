@@ -8,26 +8,76 @@ import (
 	"github.com/garyburd/redigo/redis"
 )
 
+type MonitorState string
+
+const (
+	MonitorStateConnecting   = MonitorState("connecting")
+	MonitorStateConnected    = MonitorState("connected")
+	MonitorStateDisconnected = MonitorState("disconnected")
+)
+
+type MonitorOptions struct {
+	// wait time between two connects
+	WaitDuration time.Duration
+	// On state change callback
+	OnStateChange func(state MonitorState)
+	// Logger
+	Logger *logrus.Logger
+}
+
+type MonitorOption func(*MonitorOptions)
+
+func MonitorWaitDuration(waitDuration time.Duration) MonitorOption {
+	return func(options *MonitorOptions) {
+		options.WaitDuration = waitDuration
+	}
+}
+
+func MonitorOnStateChange(onStateChange func(state MonitorState)) MonitorOption {
+	return func(options *MonitorOptions) {
+		options.OnStateChange = onStateChange
+	}
+}
+
+func MonitorLogger(logger *logrus.Logger) MonitorOption {
+	return func(options *MonitorOptions) {
+		options.Logger = logger
+	}
+}
+
 type Monitor struct {
-	dial             Dialer
-	channelName      string
-	onMessage        func(data []byte)
-	waitDuration     time.Duration
+	dial          Dialer
+	channelName   string
+	onMessage     func(data []byte)
+	waitDuration  time.Duration
+	onStateChange func(state MonitorState)
+	logger        *logrus.Logger
+
 	started          bool
 	currentConn      redis.Conn
 	currentConnMutex sync.Mutex
-	logger           *logrus.Logger
 }
 
-func NewMonitor(dial Dialer, channelName string, onMessage func(data []byte), waitDuration time.Duration) *Monitor {
+func NewMonitor(dial Dialer, channelName string, onMessage func(data []byte), opts ...MonitorOption) *Monitor {
+	options := &MonitorOptions{
+		WaitDuration:  1 * time.Second,
+		OnStateChange: nil,
+		Logger:        logrus.StandardLogger(),
+	}
+	for _, setter := range opts {
+		setter(options)
+	}
+
 	m := &Monitor{
-		dial:         dial,
-		channelName:  channelName,
-		onMessage:    onMessage,
-		waitDuration: waitDuration,
-		started:      true,
-		currentConn:  nil,
-		logger:       logrus.StandardLogger(),
+		dial:          dial,
+		channelName:   channelName,
+		onMessage:     onMessage,
+		waitDuration:  options.WaitDuration,
+		onStateChange: options.OnStateChange,
+		logger:        options.Logger,
+
+		started:     true,
+		currentConn: nil,
 	}
 
 	go m.start()
@@ -49,11 +99,21 @@ func (m *Monitor) Close() error {
 	return nil
 }
 
-func (m *Monitor) SetLogger(logger *logrus.Logger) {
-	m.logger = logger
+func (m *Monitor) stateChanged(state MonitorState) {
+	m.logger.WithField("state", string(state)).Debug("Redis monitor state changed")
+
+	if m.onStateChange != nil {
+		m.onStateChange(state)
+	}
 }
 
 func (m *Monitor) do() {
+	defer func() {
+		m.stateChanged(MonitorStateDisconnected)
+	}()
+
+	m.stateChanged(MonitorStateConnecting)
+
 	conn, err := m.dial()
 	if err != nil {
 		m.logger.WithError(err).Warn("Redis dial failed")
@@ -80,9 +140,8 @@ func (m *Monitor) do() {
 		return
 	}
 
-	m.logger.Debug("Redis monitor ready")
+	m.stateChanged(MonitorStateConnected)
 
-pscLoop:
 	for {
 		switch v := psc.Receive().(type) {
 		case redis.Message:
@@ -96,8 +155,7 @@ pscLoop:
 			if m.started {
 				m.logger.WithError(v).Warn("Redis monitor receive error")
 			}
-
-			break pscLoop
+			return
 		}
 	}
 }
