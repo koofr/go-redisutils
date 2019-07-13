@@ -5,6 +5,7 @@ package redisutils_test
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"time"
@@ -192,4 +193,49 @@ var _ = Describe("Monitor", func() {
 		}))
 	})
 
+	It("should be in connecting state until subscribed", func() {
+		logger := logrus.New()
+		logger.Level = logrus.DebugLevel
+
+		onConnectingChan := make(chan struct{}, 1)
+
+		states := []MonitorState{}
+
+		onStateChange := func(state MonitorState) {
+			states = append(states, state)
+
+			if state == MonitorStateConnecting {
+				onConnectingChan <- struct{}{}
+			}
+		}
+
+		proxyListener, err := net.Listen("tcp", "127.0.0.1:0")
+		Expect(err).NotTo(HaveOccurred())
+		defer proxyListener.Close()
+
+		proxyAddr := proxyListener.Addr().String()
+		proxyDial := NewDialer(proxyAddr)
+
+		monitor := NewMonitor(
+			proxyDial, redisChannel, func(data []byte) {},
+			MonitorWaitDuration(50*time.Millisecond),
+			MonitorOnStateChange(onStateChange),
+			MonitorLogger(logger),
+		)
+
+		<-onConnectingChan
+		conn, err := proxyListener.Accept()
+		Expect(err).NotTo(HaveOccurred())
+		go io.Copy(ioutil.Discard, conn)
+		time.Sleep(100 * time.Millisecond)
+		err = conn.Close()
+		Expect(err).NotTo(HaveOccurred())
+		time.Sleep(100 * time.Millisecond)
+
+		monitor.Close()
+
+		Expect(states).To(Equal([]MonitorState{
+			MonitorStateConnecting,
+		}))
+	})
 })

@@ -56,6 +56,7 @@ type Monitor struct {
 	started          bool
 	currentConn      redis.Conn
 	currentConnMutex sync.Mutex
+	currentState     MonitorState
 }
 
 func NewMonitor(dial Dialer, channelName string, onMessage func(data []byte), opts ...MonitorOption) *Monitor {
@@ -76,8 +77,9 @@ func NewMonitor(dial Dialer, channelName string, onMessage func(data []byte), op
 		onStateChange: options.OnStateChange,
 		logger:        options.Logger,
 
-		started:     true,
-		currentConn: nil,
+		started:      true,
+		currentConn:  nil,
+		currentState: MonitorState(""),
 	}
 
 	go m.start()
@@ -99,7 +101,13 @@ func (m *Monitor) Close() error {
 	return nil
 }
 
-func (m *Monitor) stateChanged(state MonitorState) {
+func (m *Monitor) setState(state MonitorState) {
+	if m.currentState == state {
+		return
+	}
+
+	m.currentState = state
+
 	m.logger.WithField("state", string(state)).Debug("Redis monitor state changed")
 
 	if m.onStateChange != nil {
@@ -109,10 +117,12 @@ func (m *Monitor) stateChanged(state MonitorState) {
 
 func (m *Monitor) do() {
 	defer func() {
-		m.stateChanged(MonitorStateDisconnected)
+		if m.currentState == MonitorStateConnected {
+			m.setState(MonitorStateDisconnected)
+		}
 	}()
 
-	m.stateChanged(MonitorStateConnecting)
+	m.setState(MonitorStateConnecting)
 
 	conn, err := m.dial()
 	if err != nil {
@@ -140,8 +150,6 @@ func (m *Monitor) do() {
 		return
 	}
 
-	m.stateChanged(MonitorStateConnected)
-
 	for {
 		switch v := psc.Receive().(type) {
 		case redis.Message:
@@ -150,6 +158,7 @@ func (m *Monitor) do() {
 			}
 
 		case redis.Subscription:
+			m.setState(MonitorStateConnected)
 
 		case error:
 			if m.started {
