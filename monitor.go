@@ -126,7 +126,7 @@ func (m *Monitor) do() {
 
 	conn, err := m.dial()
 	if err != nil {
-		m.logger.WithError(err).Warn("Redis dial failed")
+		m.logger.WithError(err).Warn("Redis monitor dial failed")
 		return
 	}
 
