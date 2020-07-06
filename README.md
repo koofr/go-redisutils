@@ -7,9 +7,20 @@ Go Redis utils.
 
 ## Install
 
-    go get github.com/koofr/go-redisutils
+```sh
+go get github.com/koofr/go-redisutils
+```
 
 ## Testing
 
-    go get -t
-    go test
+```sh
+docker run --rm -it -p 26379:6379 redis
+```
+
+```sh
+export REDIS_HOST=localhost
+export REDIS_PORT=26379
+
+go get
+go test
+```

@@ -1,7 +1,5 @@
 package redisutils_test
 
-// REDIS_HOST=localhost REDIS_PORT=6379 ginkgo
-
 import (
 	"fmt"
 	"io"
@@ -10,10 +8,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	. "github.com/koofr/go-redisutils"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"github.com/sirupsen/logrus"
 )
 
 var _ = Describe("Monitor", func() {

@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/garyburd/redigo/redis"
+	"github.com/sirupsen/logrus"
 )
 
 type MonitorState string
