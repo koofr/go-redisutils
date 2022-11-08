@@ -22,7 +22,7 @@ type MonitorOptions struct {
 	// On state change callback
 	OnStateChange func(state MonitorState)
 	// Logger
-	Logger *logrus.Logger
+	LoggerEntry *logrus.Entry
 }
 
 type MonitorOption func(*MonitorOptions)
@@ -41,7 +41,13 @@ func MonitorOnStateChange(onStateChange func(state MonitorState)) MonitorOption 
 
 func MonitorLogger(logger *logrus.Logger) MonitorOption {
 	return func(options *MonitorOptions) {
-		options.Logger = logger
+		options.LoggerEntry = logger.WithFields(nil)
+	}
+}
+
+func MonitorLoggerEntry(entry *logrus.Entry) MonitorOption {
+	return func(options *MonitorOptions) {
+		options.LoggerEntry = entry
 	}
 }
 
@@ -51,7 +57,7 @@ type Monitor struct {
 	onMessage     func(data []byte)
 	waitDuration  time.Duration
 	onStateChange func(state MonitorState)
-	logger        *logrus.Logger
+	logger        *logrus.Entry
 
 	started          bool
 	currentConn      redis.Conn
@@ -63,7 +69,7 @@ func NewMonitor(dial Dialer, channelName string, onMessage func(data []byte), op
 	options := &MonitorOptions{
 		WaitDuration:  1 * time.Second,
 		OnStateChange: nil,
-		Logger:        logrus.StandardLogger(),
+		LoggerEntry:   logrus.StandardLogger().WithFields(nil),
 	}
 	for _, setter := range opts {
 		setter(options)
@@ -75,7 +81,7 @@ func NewMonitor(dial Dialer, channelName string, onMessage func(data []byte), op
 		onMessage:     onMessage,
 		waitDuration:  options.WaitDuration,
 		onStateChange: options.OnStateChange,
-		logger:        options.Logger,
+		logger:        options.LoggerEntry,
 
 		started:      true,
 		currentConn:  nil,
