@@ -21,6 +21,5 @@ docker run --rm -it -p 26379:6379 redis
 export REDIS_HOST=localhost
 export REDIS_PORT=26379
 
-go get
 go test
 ```
